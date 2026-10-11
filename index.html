@@ -230,6 +230,7 @@ const CITIES_ALL = [
   { name: "デンバー", country: "アメリカ", tz: "America/Denver", region: "北米" },
   { name: "フェニックス", country: "アメリカ", tz: "America/Phoenix", region: "北米" },
   { name: "ロサンゼルス", country: "アメリカ", tz: "America/Los_Angeles", region: "北米" },
+  { id: "san-francisco", name: "サンフランシスコ", country: "アメリカ", tz: "America/Los_Angeles", region: "北米" },
   { name: "アンカレッジ", country: "アメリカ", tz: "America/Anchorage", region: "北米" },
   { name: "ホノルル", country: "アメリカ", tz: "Pacific/Honolulu", region: "北米" },
   { name: "トロント", country: "カナダ", tz: "America/Toronto", region: "北米" },
@@ -274,7 +275,9 @@ function getDTF(tz) {
 
 // ブラウザが対応していないタイムゾーンの都市は除外する
 const CITIES = CITIES_ALL.filter(c => { try { getDTF(c.tz); return true; } catch (e) { return false; } });
-const CITY_BY_TZ = new Map(CITIES.map(c => [c.tz, c]));
+// 都市ID：通常はIANA名。同じタイムゾーンの都市が複数あるときだけ id を個別に付ける
+for (const c of CITIES) c.id = c.id || c.tz;
+const CITY_BY_ID = new Map(CITIES.map(c => [c.id, c]));
 
 // 年月日時分を「UTCとみなした」epoch ms（西暦100年未満も正しく扱う）
 function fieldsToNaive(y, m, d, h, mi) {
@@ -396,27 +399,57 @@ const el = {
 
 const state = {
   epoch: 0,
-  baseTz: DEFAULT_BASE,
-  targets: [],
-  edit: null, // 直前に編集した欄 { source: "base" | tz, status: "ok" | "gap" | "overlap" | "empty" }
+  baseId: DEFAULT_BASE,
+  targets: [], // 都市IDの配列
+  edit: null, // 直前に編集した欄 { source: "base" | 都市ID, status: "ok" | "gap" | "overlap" | "empty" }
 };
+
+const tzOf = id => CITY_BY_ID.get(id).tz;
 
 function nowEpoch() { return Math.floor(Date.now() / 60000) * 60000; }
 
-function load() {
+function applySettings(baseId, targets) {
+  if (!CITY_BY_ID.has(baseId) || !Array.isArray(targets)) return false;
+  state.baseId = baseId;
+  state.targets = [...new Set(targets.filter(id => CITY_BY_ID.has(id)))].slice(0, MAX_TARGETS);
+  return true;
+}
+
+function loadFromStorage() {
   try {
     const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-    if (data && CITY_BY_TZ.has(data.baseTz)) state.baseTz = data.baseTz;
-    if (data && Array.isArray(data.targets)) {
-      state.targets = [...new Set(data.targets.filter(tz => CITY_BY_TZ.has(tz)))].slice(0, MAX_TARGETS);
-    }
-  } catch (e) { /* 復元できなければ初期値のまま */ }
+    // baseTz は以前の保存形式
+    return !!data && applySettings(data.base || data.baseTz, data.targets);
+  } catch (e) { return false; }
+}
+
+function loadFromURL() {
+  const q = new URLSearchParams(location.search);
+  if (!q.has("base")) return false;
+  const cities = q.get("cities");
+  return applySettings(q.get("base"), cities ? cities.split(",") : []);
+}
+
+// 端末に保存した設定を優先し、なければURLに書かれた設定を使う
+function load() {
+  if (!loadFromStorage()) loadFromURL();
+}
+
+function settingsQuery() {
+  const enc = s => encodeURIComponent(s).replace(/%2F/g, "/");
+  let q = "?base=" + enc(state.baseId);
+  if (state.targets.length) q += "&cities=" + state.targets.map(enc).join(",");
+  return q;
 }
 
 function save() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ baseTz: state.baseTz, targets: state.targets }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ base: state.baseId, targets: state.targets }));
   } catch (e) { /* 保存できない環境では何もしない */ }
+  // URLにも書き込み、ブックマークやホーム画面のアイコンから設定を復元できるようにする
+  try {
+    history.replaceState(null, "", settingsQuery() + location.hash);
+  } catch (e) { /* URLを書き換えられない環境では何もしない */ }
 }
 
 function cityLabel(c) { return `${c.name}（${c.country}）`; }
@@ -431,8 +464,8 @@ function buildOptions(select, disabledSet, placeholder) {
     const g = document.createElement("optgroup");
     g.label = region;
     for (const c of CITIES.filter(c => c.region === region)) {
-      const o = new Option(cityLabel(c), c.tz);
-      if (disabledSet && disabledSet.has(c.tz)) o.disabled = true;
+      const o = new Option(cityLabel(c), c.id);
+      if (disabledSet && disabledSet.has(c.id)) o.disabled = true;
       g.appendChild(o);
     }
     if (g.children.length) select.appendChild(g);
@@ -489,30 +522,32 @@ function noteFor(source, tz) {
 }
 
 function updateValues() {
-  const base = describe(state.baseTz, state.epoch, state.baseTz);
+  const baseTz = tzOf(state.baseId);
+  const base = describe(baseTz, state.epoch, baseTz);
   setValue(el.baseDate, base.date);
   setValue(el.baseTime, base.time);
   el.baseWeekday.textContent = `(${base.weekday})`;
   renderInfo(el.baseInfo, base, false);
-  el.baseNote.textContent = noteFor("base", state.baseTz);
+  el.baseNote.textContent = noteFor("base", baseTz);
 
   for (const card of el.targets.children) {
-    const tz = card.dataset.tz;
-    const info = describe(tz, state.epoch, state.baseTz);
+    const id = card.dataset.id;
+    const tz = tzOf(id);
+    const info = describe(tz, state.epoch, baseTz);
     setValue(card.querySelector(".t-date"), info.date);
     setValue(card.querySelector(".t-time"), info.time);
     card.querySelector(".weekday").textContent = `(${info.weekday})`;
     renderInfo(card.querySelector(".info"), info, true);
-    card.querySelector(".note").textContent = noteFor(tz, tz);
+    card.querySelector(".note").textContent = noteFor(id, tz);
   }
 }
 
 function renderTargets() {
   el.targets.textContent = "";
-  for (const tz of state.targets) {
-    const c = CITY_BY_TZ.get(tz);
+  for (const id of state.targets) {
+    const c = CITY_BY_ID.get(id);
     const node = el.tpl.content.firstElementChild.cloneNode(true);
-    node.dataset.tz = tz;
+    node.dataset.id = id;
     const title = node.querySelector(".card-title");
     title.append(c.name + " ");
     const small = document.createElement("small");
@@ -557,25 +592,28 @@ function onLeave() {
 
 function init() {
   load();
+  save(); // 復元した設定をURLと端末の保存領域に反映する
+  // 保存データを自動で消さないようブラウザに依頼する（対応ブラウザのみ）
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) {}
   state.epoch = nowEpoch();
   buildOptions(el.baseCity);
-  el.baseCity.value = state.baseTz;
+  el.baseCity.value = state.baseId;
 
   el.baseCity.addEventListener("change", () => {
-    state.baseTz = el.baseCity.value;
+    state.baseId = el.baseCity.value;
     save();
     // 入力済みの日時を新しい基準都市の時刻として解釈し直す
-    onEdit("base", state.baseTz, el.baseDate.value, el.baseTime.value);
+    onEdit("base", tzOf(state.baseId), el.baseDate.value, el.baseTime.value);
   });
   for (const input of [el.baseDate, el.baseTime]) {
-    input.addEventListener("input", () => onEdit("base", state.baseTz, el.baseDate.value, el.baseTime.value));
+    input.addEventListener("input", () => onEdit("base", tzOf(state.baseId), el.baseDate.value, el.baseTime.value));
     input.addEventListener("blur", onLeave);
   }
 
   el.targets.addEventListener("input", e => {
     const card = e.target.closest(".card");
     if (!card) return;
-    onEdit(card.dataset.tz, card.dataset.tz,
+    onEdit(card.dataset.id, tzOf(card.dataset.id),
       card.querySelector(".t-date").value, card.querySelector(".t-time").value);
   });
   el.targets.addEventListener("focusout", e => {
@@ -584,9 +622,9 @@ function init() {
   el.targets.addEventListener("click", e => {
     const btn = e.target.closest(".remove");
     if (!btn) return;
-    const tz = btn.closest(".card").dataset.tz;
-    state.targets = state.targets.filter(t => t !== tz);
-    if (state.edit && state.edit.source === tz) state.edit = null;
+    const id = btn.closest(".card").dataset.id;
+    state.targets = state.targets.filter(t => t !== id);
+    if (state.edit && state.edit.source === id) state.edit = null;
     save();
     renderTargets();
   });
@@ -595,9 +633,9 @@ function init() {
     el.addBtn.disabled = state.targets.length >= MAX_TARGETS || !el.addCity.value;
   });
   el.addBtn.addEventListener("click", () => {
-    const tz = el.addCity.value;
-    if (!tz || state.targets.includes(tz) || state.targets.length >= MAX_TARGETS) return;
-    state.targets.push(tz);
+    const id = el.addCity.value;
+    if (!id || state.targets.includes(id) || state.targets.length >= MAX_TARGETS) return;
+    state.targets.push(id);
     save();
     renderTargets();
   });
