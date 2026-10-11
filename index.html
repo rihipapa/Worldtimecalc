@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>世界時差計算</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --surface: #ffffff;
+    --text: #1d2330;
+    --muted: #5f6878;
+    --border: #d9dde4;
+    --accent: #2f6fde;
+    --accent-text: #ffffff;
+    --dst: #b5600b;
+    --dst-bg: #fff2e2;
+    --note: #8a5a00;
+    --danger: #c23a3a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171c;
+      --surface: #1e232b;
+      --text: #e7eaf0;
+      --muted: #9aa3b2;
+      --border: #343b47;
+      --accent: #5b92f0;
+      --accent-text: #0e1420;
+      --dst: #f0a554;
+      --dst-bg: #3a2a15;
+      --note: #e8c26a;
+      --danger: #ef7676;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+    line-height: 1.5;
+  }
+  main { max-width: 640px; margin: 0 auto; padding: 16px 16px 48px; }
+  h1 { font-size: 1.4rem; margin: 8px 0 16px; }
+  h2 { font-size: 1rem; margin: 0 0 12px; color: var(--muted); font-weight: 600; }
+  section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: 4px; }
+  select, input[type="date"], input[type="time"], button {
+    font: inherit;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    min-height: 42px;
+  }
+  select { width: 100%; }
+  input[type="date"], input[type="time"] { color-scheme: light dark; }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  button:disabled, select:disabled { opacity: .5; cursor: not-allowed; }
+  .field { margin-bottom: 12px; }
+  .datetime { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .datetime input[type="date"] { flex: 1 1 150px; min-width: 0; }
+  .datetime input[type="time"] { flex: 0 1 120px; min-width: 0; }
+  .weekday { font-weight: 600; min-width: 2.5em; }
+  .info { font-size: .9rem; color: var(--muted); margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .info strong { color: var(--text); }
+  .dst-badge { color: var(--dst); background: var(--dst-bg); border-radius: 4px; padding: 0 6px; font-size: .8rem; }
+  .note { font-size: .85rem; color: var(--note); margin-top: 6px; }
+  .note:empty { display: none; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .row select { flex: 1 1 200px; width: auto; }
+  .now-btn { margin-top: 12px; }
+  .card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+  .card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .card-title { font-weight: 700; }
+  .card-title small { font-weight: 400; color: var(--muted); }
+  .remove {
+    min-height: 32px; padding: 2px 10px; color: var(--danger);
+    border-color: transparent; background: transparent; font-size: 1.1rem; line-height: 1;
+  }
+  .remove:hover { border-color: var(--border); }
+  .empty, .limit { color: var(--muted); font-size: .9rem; margin: 0 0 12px; }
+  .limit { margin: 8px 0 0; }
+  .count { font-weight: 400; }
+</style>
+</head>
+<body>
+<main>
+  <h1>世界時差計算</h1>
+
+  <section aria-labelledby="base-h">
+    <h2 id="base-h">基準</h2>
+    <div class="field">
+      <label for="base-city">都市</label>
+      <select id="base-city"></select>
+    </div>
+    <div class="field">
+      <label for="base-date">日付・時刻</label>
+      <div class="datetime">
+        <input type="date" id="base-date" aria-label="基準の日付">
+        <input type="time" id="base-time" step="60" aria-label="基準の時刻">
+        <span class="weekday" id="base-weekday"></span>
+      </div>
+      <div class="info" id="base-info"></div>
+      <div class="note" id="base-note"></div>
+    </div>
+    <button type="button" id="now-btn" class="now-btn">現在時刻にする</button>
+  </section>
+
+  <section aria-labelledby="targets-h">
+    <h2 id="targets-h">知りたい都市 <span class="count" id="count"></span></h2>
+    <p class="empty" id="empty-msg">「都市を追加」から知りたい都市を選んでください（最大5都市）。</p>
+    <div id="targets"></div>
+    <div class="row">
+      <select id="add-city" aria-label="追加する都市"></select>
+      <button type="button" id="add-btn" class="primary">都市を追加</button>
+    </div>
+    <p class="limit" id="limit-msg" hidden>最大5都市まで追加できます。</p>
+  </section>
+</main>
+
+<template id="card-tpl">
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title"></div>
+      <button type="button" class="remove" aria-label="削除" title="削除">×</button>
+    </div>
+    <div class="datetime">
+      <input type="date" class="t-date">
+      <input type="time" class="t-time" step="60">
+      <span class="weekday"></span>
+    </div>
+    <div class="info"></div>
+    <div class="note"></div>
+  </div>
+</template>
+
+<script>
+// ==CORE START==
+const REGIONS = ["アジア", "中東", "ヨーロッパ", "アフリカ", "北米", "中南米", "オセアニア"];
+
+const CITIES_ALL = [
+  // アジア
+  { name: "東京", country: "日本", tz: "Asia/Tokyo", region: "アジア" },
+  { name: "ソウル", country: "韓国", tz: "Asia/Seoul", region: "アジア" },
+  { name: "北京", country: "中国", tz: "Asia/Shanghai", region: "アジア" },
+  { name: "香港", country: "中国", tz: "Asia/Hong_Kong", region: "アジア" },
+  { name: "台北", country: "台湾", tz: "Asia/Taipei", region: "アジア" },
+  { name: "マニラ", country: "フィリピン", tz: "Asia/Manila", region: "アジア" },
+  { name: "バンコク", country: "タイ", tz: "Asia/Bangkok", region: "アジア" },
+  { name: "ホーチミン", country: "ベトナム", tz: "Asia/Ho_Chi_Minh", region: "アジア" },
+  { name: "シンガポール", country: "シンガポール", tz: "Asia/Singapore", region: "アジア" },
+  { name: "クアラルンプール", country: "マレーシア", tz: "Asia/Kuala_Lumpur", region: "アジア" },
+  { name: "ジャカルタ", country: "インドネシア", tz: "Asia/Jakarta", region: "アジア" },
+  { name: "ヤンゴン", country: "ミャンマー", tz: "Asia/Yangon", region: "アジア" },
+  { name: "ダッカ", country: "バングラデシュ", tz: "Asia/Dhaka", region: "アジア" },
+  { name: "カトマンズ", country: "ネパール", tz: "Asia/Kathmandu", region: "アジア" },
+  { name: "デリー", country: "インド", tz: "Asia/Kolkata", region: "アジア" },
+  { name: "コロンボ", country: "スリランカ", tz: "Asia/Colombo", region: "アジア" },
+  { name: "カラチ", country: "パキスタン", tz: "Asia/Karachi", region: "アジア" },
+  { name: "タシケント", country: "ウズベキスタン", tz: "Asia/Tashkent", region: "アジア" },
+  { name: "ウランバートル", country: "モンゴル", tz: "Asia/Ulaanbaatar", region: "アジア" },
+  // 中東
+  { name: "ドバイ", country: "アラブ首長国連邦", tz: "Asia/Dubai", region: "中東" },
+  { name: "ドーハ", country: "カタール", tz: "Asia/Qatar", region: "中東" },
+  { name: "リヤド", country: "サウジアラビア", tz: "Asia/Riyadh", region: "中東" },
+  { name: "テヘラン", country: "イラン", tz: "Asia/Tehran", region: "中東" },
+  { name: "カブール", country: "アフガニスタン", tz: "Asia/Kabul", region: "中東" },
+  { name: "エルサレム", country: "イスラエル", tz: "Asia/Jerusalem", region: "中東" },
+  { name: "イスタンブール", country: "トルコ", tz: "Europe/Istanbul", region: "中東" },
+  // ヨーロッパ
+  { name: "ロンドン", country: "イギリス", tz: "Europe/London", region: "ヨーロッパ" },
+  { name: "ダブリン", country: "アイルランド", tz: "Europe/Dublin", region: "ヨーロッパ" },
+  { name: "リスボン", country: "ポルトガル", tz: "Europe/Lisbon", region: "ヨーロッパ" },
+  { name: "マドリード", country: "スペイン", tz: "Europe/Madrid", region: "ヨーロッパ" },
+  { name: "パリ", country: "フランス", tz: "Europe/Paris", region: "ヨーロッパ" },
+  { name: "アムステルダム", country: "オランダ", tz: "Europe/Amsterdam", region: "ヨーロッパ" },
+  { name: "ベルリン", country: "ドイツ", tz: "Europe/Berlin", region: "ヨーロッパ" },
+  { name: "チューリッヒ", country: "スイス", tz: "Europe/Zurich", region: "ヨーロッパ" },
+  { name: "ローマ", country: "イタリア", tz: "Europe/Rome", region: "ヨーロッパ" },
+  { name: "ウィーン", country: "オーストリア", tz: "Europe/Vienna", region: "ヨーロッパ" },
+  { name: "プラハ", country: "チェコ", tz: "Europe/Prague", region: "ヨーロッパ" },
+  { name: "ワルシャワ", country: "ポーランド", tz: "Europe/Warsaw", region: "ヨーロッパ" },
+  { name: "ストックホルム", country: "スウェーデン", tz: "Europe/Stockholm", region: "ヨーロッパ" },
+  { name: "ヘルシンキ", country: "フィンランド", tz: "Europe/Helsinki", region: "ヨーロッパ" },
+  { name: "アテネ", country: "ギリシャ", tz: "Europe/Athens", region: "ヨーロッパ" },
+  { name: "キーウ", country: "ウクライナ", tz: "Europe/Kyiv", region: "ヨーロッパ" },
+  { name: "モスクワ", country: "ロシア", tz: "Europe/Moscow", region: "ヨーロッパ" },
+  // アフリカ
+  { name: "カイロ", country: "エジプト", tz: "Africa/Cairo", region: "アフリカ" },
+  { name: "ナイロビ", country: "ケニア", tz: "Africa/Nairobi", region: "アフリカ" },
+  { name: "アディスアベバ", country: "エチオピア", tz: "Africa/Addis_Ababa", region: "アフリカ" },
+  { name: "ヨハネスブルグ", country: "南アフリカ", tz: "Africa/Johannesburg", region: "アフリカ" },
+  { name: "ラゴス", country: "ナイジェリア", tz: "Africa/Lagos", region: "アフリカ" },
+  { name: "アクラ", country: "ガーナ", tz: "Africa/Accra", region: "アフリカ" },
+  { name: "アルジェ", country: "アルジェリア", tz: "Africa/Algiers", region: "アフリカ" },
+  // 北米
+  { name: "ニューヨーク", country: "アメリカ", tz: "America/New_York", region: "北米" },
+  { name: "シカゴ", country: "アメリカ", tz: "America/Chicago", region: "北米" },
+  { name: "デンバー", country: "アメリカ", tz: "America/Denver", region: "北米" },
+  { name: "フェニックス", country: "アメリカ", tz: "America/Phoenix", region: "北米" },
+  { name: "ロサンゼルス", country: "アメリカ", tz: "America/Los_Angeles", region: "北米" },
+  { name: "アンカレッジ", country: "アメリカ", tz: "America/Anchorage", region: "北米" },
+  { name: "ホノルル", country: "アメリカ", tz: "Pacific/Honolulu", region: "北米" },
+  { name: "トロント", country: "カナダ", tz: "America/Toronto", region: "北米" },
+  { name: "バンクーバー", country: "カナダ", tz: "America/Vancouver", region: "北米" },
+  { name: "セントジョンズ", country: "カナダ", tz: "America/St_Johns", region: "北米" },
+  // 中南米
+  { name: "メキシコシティ", country: "メキシコ", tz: "America/Mexico_City", region: "中南米" },
+  { name: "ハバナ", country: "キューバ", tz: "America/Havana", region: "中南米" },
+  { name: "パナマシティ", country: "パナマ", tz: "America/Panama", region: "中南米" },
+  { name: "ボゴタ", country: "コロンビア", tz: "America/Bogota", region: "中南米" },
+  { name: "リマ", country: "ペルー", tz: "America/Lima", region: "中南米" },
+  { name: "カラカス", country: "ベネズエラ", tz: "America/Caracas", region: "中南米" },
+  { name: "サンティアゴ", country: "チリ", tz: "America/Santiago", region: "中南米" },
+  { name: "ブエノスアイレス", country: "アルゼンチン", tz: "America/Argentina/Buenos_Aires", region: "中南米" },
+  { name: "サンパウロ", country: "ブラジル", tz: "America/Sao_Paulo", region: "中南米" },
+  // オセアニア
+  { name: "シドニー", country: "オーストラリア", tz: "Australia/Sydney", region: "オセアニア" },
+  { name: "メルボルン", country: "オーストラリア", tz: "Australia/Melbourne", region: "オセアニア" },
+  { name: "ブリスベン", country: "オーストラリア", tz: "Australia/Brisbane", region: "オセアニア" },
+  { name: "アデレード", country: "オーストラリア", tz: "Australia/Adelaide", region: "オセアニア" },
+  { name: "ダーウィン", country: "オーストラリア", tz: "Australia/Darwin", region: "オセアニア" },
+  { name: "パース", country: "オーストラリア", tz: "Australia/Perth", region: "オセアニア" },
+  { name: "オークランド", country: "ニュージーランド", tz: "Pacific/Auckland", region: "オセアニア" },
+  { name: "スバ", country: "フィジー", tz: "Pacific/Fiji", region: "オセアニア" },
+  { name: "グアム", country: "アメリカ", tz: "Pacific/Guam", region: "オセアニア" },
+  { name: "キリティマティ", country: "キリバス", tz: "Pacific/Kiritimati", region: "オセアニア" },
+];
+
+const dtfCache = new Map();
+function getDTF(tz) {
+  let f = dtfCache.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz, hourCycle: "h23",
+      year: "numeric", month: "numeric", day: "numeric",
+      hour: "numeric", minute: "numeric", second: "numeric",
+    });
+    dtfCache.set(tz, f);
+  }
+  return f;
+}
+
+// ブラウザが対応していないタイムゾーンの都市は除外する
+const CITIES = CITIES_ALL.filter(c => { try { getDTF(c.tz); return true; } catch (e) { return false; } });
+const CITY_BY_TZ = new Map(CITIES.map(c => [c.tz, c]));
+
+// 年月日時分を「UTCとみなした」epoch ms（西暦100年未満も正しく扱う）
+function fieldsToNaive(y, m, d, h, mi) {
+  const dt = new Date(Date.UTC(2000, m - 1, d, h, mi));
+  dt.setUTCFullYear(y);
+  return dt.getTime();
+}
+
+// ある瞬間の、そのタイムゾーンでの壁時計時刻
+function getParts(tz, epoch) {
+  const p = {};
+  for (const { type, value } of getDTF(tz).formatToParts(new Date(epoch))) {
+    if (type !== "literal") p[type] = parseInt(value, 10);
+  }
+  return { y: p.year, m: p.month, d: p.day, h: p.hour % 24, mi: p.minute, s: p.second };
+}
+
+// ある瞬間の、そのタイムゾーンのUTCオフセット（分）
+function getOffset(tz, epoch) {
+  const sec = Math.floor(epoch / 1000) * 1000;
+  const p = getParts(tz, sec);
+  const naive = fieldsToNaive(p.y, p.m, p.d, p.h, p.mi) + p.s * 1000;
+  return Math.round((naive - sec) / 60000);
+}
+
+// タイムゾーンの壁時計時刻 → epoch ms
+// status: "ok" | "gap"（存在しない時刻→時計を進める方向に解釈）| "overlap"（2回ある時刻→1回目を採用）
+function zonedToEpoch(tz, y, m, d, h, mi) {
+  const naive = fieldsToNaive(y, m, d, h, mi);
+  const DAY = 86400000;
+  const before = getOffset(tz, naive - DAY);
+  const after = getOffset(tz, naive + DAY);
+  const offsets = new Set([before, after, getOffset(tz, naive)]);
+  const valid = [];
+  for (const o of offsets) {
+    const e = naive - o * 60000;
+    if (getOffset(tz, e) === o && !valid.includes(e)) valid.push(e);
+  }
+  valid.sort((a, b) => a - b);
+  if (valid.length === 1) return { epoch: valid[0], status: "ok" };
+  if (valid.length > 1) return { epoch: valid[0], status: "overlap" };
+  return { epoch: naive - before * 60000, status: "gap" };
+}
+
+function isDST(tz, epoch) {
+  const y = getParts(tz, epoch).y;
+  const jan = getOffset(tz, fieldsToNaive(y, 1, 1, 0, 0));
+  const jul = getOffset(tz, fieldsToNaive(y, 7, 1, 0, 0));
+  if (jan === jul) return false;
+  return getOffset(tz, epoch) > Math.min(jan, jul);
+}
+
+const MINUS = "−";
+const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+const pad = (n, w = 2) => String(n).padStart(w, "0");
+
+function weekdayOf(p) {
+  return WEEKDAYS[new Date(fieldsToNaive(p.y, p.m, p.d, 0, 0)).getUTCDay()];
+}
+
+// 時差（分）→ "+8時間" / "−13時間30分" / "±0時間"
+function formatDiff(min) {
+  if (min === 0) return "±0時間";
+  const sign = min > 0 ? "+" : MINUS;
+  const a = Math.abs(min), h = Math.floor(a / 60), m = a % 60;
+  if (h === 0) return `${sign}${m}分`;
+  return m ? `${sign}${h}時間${m}分` : `${sign}${h}時間`;
+}
+
+// UTCオフセット（分）→ "UTC+9" / "UTC+5:30" / "UTC−3:30" / "UTC±0"
+function formatUTC(min) {
+  if (min === 0) return "UTC±0";
+  const sign = min > 0 ? "+" : MINUS;
+  const a = Math.abs(min), h = Math.floor(a / 60), m = a % 60;
+  return `UTC${sign}${h}${m ? ":" + pad(m) : ""}`;
+}
+
+function dayDiff(p, base) {
+  return Math.round((fieldsToNaive(p.y, p.m, p.d, 0, 0) - fieldsToNaive(base.y, base.m, base.d, 0, 0)) / 86400000);
+}
+
+function formatDayDiff(n) {
+  if (n === 0) return "同日";
+  if (n === -1) return "前日";
+  if (n === 1) return "翌日";
+  return n < 0 ? `${-n}日前` : `${n}日後`;
+}
+
+// 1都市分の表示情報
+function describe(tz, epoch, baseTz) {
+  const p = getParts(tz, epoch);
+  const bp = getParts(baseTz, epoch);
+  const off = getOffset(tz, epoch);
+  return {
+    parts: p,
+    date: `${pad(p.y, 4)}-${pad(p.m)}-${pad(p.d)}`,
+    time: `${pad(p.h)}:${pad(p.mi)}`,
+    weekday: weekdayOf(p),
+    diff: formatDiff(off - getOffset(baseTz, epoch)),
+    day: formatDayDiff(dayDiff(p, bp)),
+    utc: formatUTC(off),
+    dst: isDST(tz, epoch),
+  };
+}
+// ==CORE END==
+
+// ---- UI ----
+const STORAGE_KEY = "worldtimecalc.v1";
+const MAX_TARGETS = 5;
+const DEFAULT_BASE = "Asia/Tokyo";
+
+const $ = id => document.getElementById(id);
+const el = {
+  baseCity: $("base-city"), baseDate: $("base-date"), baseTime: $("base-time"),
+  baseWeekday: $("base-weekday"), baseInfo: $("base-info"), baseNote: $("base-note"),
+  nowBtn: $("now-btn"), targets: $("targets"), addCity: $("add-city"), addBtn: $("add-btn"),
+  count: $("count"), emptyMsg: $("empty-msg"), limitMsg: $("limit-msg"), tpl: $("card-tpl"),
+};
+
+const state = {
+  epoch: 0,
+  baseTz: DEFAULT_BASE,
+  targets: [],
+  edit: null, // 直前に編集した欄 { source: "base" | tz, status: "ok" | "gap" | "overlap" | "empty" }
+};
+
+function nowEpoch() { return Math.floor(Date.now() / 60000) * 60000; }
+
+function load() {
+  try {
+    const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+    if (data && CITY_BY_TZ.has(data.baseTz)) state.baseTz = data.baseTz;
+    if (data && Array.isArray(data.targets)) {
+      state.targets = [...new Set(data.targets.filter(tz => CITY_BY_TZ.has(tz)))].slice(0, MAX_TARGETS);
+    }
+  } catch (e) { /* 復元できなければ初期値のまま */ }
+}
+
+function save() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ baseTz: state.baseTz, targets: state.targets }));
+  } catch (e) { /* 保存できない環境では何もしない */ }
+}
+
+function cityLabel(c) { return `${c.name}（${c.country}）`; }
+
+function buildOptions(select, disabledSet, placeholder) {
+  select.textContent = "";
+  if (placeholder) {
+    const o = new Option(placeholder, "");
+    select.add(o);
+  }
+  for (const region of REGIONS) {
+    const g = document.createElement("optgroup");
+    g.label = region;
+    for (const c of CITIES.filter(c => c.region === region)) {
+      const o = new Option(cityLabel(c), c.tz);
+      if (disabledSet && disabledSet.has(c.tz)) o.disabled = true;
+      g.appendChild(o);
+    }
+    if (g.children.length) select.appendChild(g);
+  }
+}
+
+function parseInputs(dateStr, timeStr) {
+  const dm = /^(\d{4,})-(\d{2})-(\d{2})$/.exec(dateStr);
+  const tm = /^(\d{2}):(\d{2})/.exec(timeStr);
+  if (!dm || !tm) return null;
+  return [+dm[1], +dm[2], +dm[3], +tm[1], +tm[2]];
+}
+
+// 入力中の欄は上書きしない
+function setValue(input, v) {
+  if (input !== document.activeElement && input.value !== v) input.value = v;
+}
+
+function renderInfo(container, info, showDiff) {
+  container.textContent = "";
+  const add = (label, value) => {
+    const s = document.createElement("span");
+    if (label) s.append(label + " ");
+    const b = document.createElement("strong");
+    b.textContent = value;
+    s.appendChild(b);
+    container.appendChild(s);
+  };
+  if (showDiff) {
+    add("時差", info.diff);
+    add("", info.day);
+  }
+  add("", info.utc);
+  if (info.dst) {
+    const s = document.createElement("span");
+    s.className = "dst-badge";
+    s.textContent = "サマータイム中";
+    container.appendChild(s);
+  }
+}
+
+function noteFor(source, tz) {
+  const ed = state.edit;
+  if (!ed || ed.source !== source) return "";
+  if (ed.status === "empty") return "日付と時刻を入力してください。";
+  if (ed.status === "gap") {
+    const d = describe(tz, state.epoch, tz);
+    return `※指定した時刻はサマータイム切替のため存在しません。${d.time}（${d.utc}）として計算しています。`;
+  }
+  if (ed.status === "overlap") {
+    return `※指定した時刻はサマータイム切替のため2回あります。1回目（${formatUTC(getOffset(tz, state.epoch))}）として計算しています。`;
+  }
+  return "";
+}
+
+function updateValues() {
+  const base = describe(state.baseTz, state.epoch, state.baseTz);
+  setValue(el.baseDate, base.date);
+  setValue(el.baseTime, base.time);
+  el.baseWeekday.textContent = `(${base.weekday})`;
+  renderInfo(el.baseInfo, base, false);
+  el.baseNote.textContent = noteFor("base", state.baseTz);
+
+  for (const card of el.targets.children) {
+    const tz = card.dataset.tz;
+    const info = describe(tz, state.epoch, state.baseTz);
+    setValue(card.querySelector(".t-date"), info.date);
+    setValue(card.querySelector(".t-time"), info.time);
+    card.querySelector(".weekday").textContent = `(${info.weekday})`;
+    renderInfo(card.querySelector(".info"), info, true);
+    card.querySelector(".note").textContent = noteFor(tz, tz);
+  }
+}
+
+function renderTargets() {
+  el.targets.textContent = "";
+  for (const tz of state.targets) {
+    const c = CITY_BY_TZ.get(tz);
+    const node = el.tpl.content.firstElementChild.cloneNode(true);
+    node.dataset.tz = tz;
+    const title = node.querySelector(".card-title");
+    title.append(c.name + " ");
+    const small = document.createElement("small");
+    small.textContent = c.country;
+    title.appendChild(small);
+    node.querySelector(".t-date").setAttribute("aria-label", `${c.name}の日付`);
+    node.querySelector(".t-time").setAttribute("aria-label", `${c.name}の時刻`);
+    node.querySelector(".remove").setAttribute("aria-label", `${c.name}を削除`);
+    el.targets.appendChild(node);
+  }
+  const n = state.targets.length;
+  const full = n >= MAX_TARGETS;
+  el.count.textContent = `(${n}/${MAX_TARGETS})`;
+  el.emptyMsg.hidden = n > 0;
+  el.limitMsg.hidden = !full;
+  buildOptions(el.addCity, new Set(state.targets), "都市を選択");
+  el.addCity.disabled = full;
+  el.addBtn.disabled = full || !el.addCity.value;
+  updateValues();
+}
+
+// ある都市の日付・時刻欄が編集されたとき
+function onEdit(source, tz, dateStr, timeStr) {
+  const f = parseInputs(dateStr, timeStr);
+  if (!f) {
+    state.edit = { source, status: "empty" };
+  } else {
+    const r = zonedToEpoch(tz, ...f);
+    state.epoch = r.epoch;
+    state.edit = { source, status: r.status };
+  }
+  updateValues();
+}
+
+// 入力欄を離れたら、空欄や存在しない時刻を実際の値に戻す
+function onLeave() {
+  setTimeout(() => {
+    if (state.edit && state.edit.status === "empty") state.edit = null;
+    updateValues();
+  }, 0);
+}
+
+function init() {
+  load();
+  state.epoch = nowEpoch();
+  buildOptions(el.baseCity);
+  el.baseCity.value = state.baseTz;
+
+  el.baseCity.addEventListener("change", () => {
+    state.baseTz = el.baseCity.value;
+    save();
+    // 入力済みの日時を新しい基準都市の時刻として解釈し直す
+    onEdit("base", state.baseTz, el.baseDate.value, el.baseTime.value);
+  });
+  for (const input of [el.baseDate, el.baseTime]) {
+    input.addEventListener("input", () => onEdit("base", state.baseTz, el.baseDate.value, el.baseTime.value));
+    input.addEventListener("blur", onLeave);
+  }
+
+  el.targets.addEventListener("input", e => {
+    const card = e.target.closest(".card");
+    if (!card) return;
+    onEdit(card.dataset.tz, card.dataset.tz,
+      card.querySelector(".t-date").value, card.querySelector(".t-time").value);
+  });
+  el.targets.addEventListener("focusout", e => {
+    if (e.target.matches(".t-date, .t-time")) onLeave();
+  });
+  el.targets.addEventListener("click", e => {
+    const btn = e.target.closest(".remove");
+    if (!btn) return;
+    const tz = btn.closest(".card").dataset.tz;
+    state.targets = state.targets.filter(t => t !== tz);
+    if (state.edit && state.edit.source === tz) state.edit = null;
+    save();
+    renderTargets();
+  });
+
+  el.addCity.addEventListener("change", () => {
+    el.addBtn.disabled = state.targets.length >= MAX_TARGETS || !el.addCity.value;
+  });
+  el.addBtn.addEventListener("click", () => {
+    const tz = el.addCity.value;
+    if (!tz || state.targets.includes(tz) || state.targets.length >= MAX_TARGETS) return;
+    state.targets.push(tz);
+    save();
+    renderTargets();
+  });
+
+  el.nowBtn.addEventListener("click", () => {
+    state.epoch = nowEpoch();
+    state.edit = null;
+    updateValues();
+  });
+
+  renderTargets();
+}
+
+init();
+</script>
+</body>
+</html>
