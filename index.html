@@ -41,61 +41,83 @@
     font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
     line-height: 1.5;
   }
-  main { max-width: 640px; margin: 0 auto; padding: 16px 16px 48px; }
-  h1 { font-size: 1.4rem; margin: 8px 0 16px; }
-  h2 { font-size: 1rem; margin: 0 0 12px; color: var(--muted); font-weight: 600; }
+  main { max-width: 760px; margin: 0 auto; padding: 12px 16px 32px; }
+  h1 { font-size: 1.2rem; margin: 4px 0 10px; }
+  h2 { font-size: .85rem; margin: 0 0 6px; color: var(--muted); font-weight: 600; }
   section {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 16px;
-    margin-bottom: 16px;
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
   }
-  label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: 4px; }
   select, input[type="date"], input[type="time"], button {
     font: inherit;
+    font-size: .95rem;
     color: var(--text);
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 8px 10px;
-    min-height: 42px;
+    padding: 4px 8px;
+    min-height: 36px;
   }
-  select { width: 100%; }
-  input[type="date"], input[type="time"] { color-scheme: light dark; }
+  select { min-width: 0; }
+  input[type="date"], input[type="time"] { color-scheme: light dark; min-width: 0; }
   button { cursor: pointer; }
   button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
   button:disabled, select:disabled { opacity: .5; cursor: not-allowed; }
-  .field { margin-bottom: 12px; }
-  .datetime { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-  .datetime input[type="date"] { flex: 1 1 150px; min-width: 0; }
-  .datetime input[type="time"] { flex: 0 1 120px; min-width: 0; }
-  .weekday { font-weight: 600; min-width: 2.5em; }
-  .info { font-size: .9rem; color: var(--muted); margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .datetime { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .weekday { font-weight: 600; min-width: 2.2em; }
+  .info { font-size: .85rem; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; }
   .info strong { color: var(--text); }
   .dst-badge { color: var(--dst); background: var(--dst-bg); border-radius: 4px; padding: 0 6px; font-size: .8rem; }
-  .note { font-size: .85rem; color: var(--note); margin-top: 6px; }
+  .note { font-size: .8rem; color: var(--note); grid-column: 1 / -1; }
   .note:empty { display: none; }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; }
-  .row select { flex: 1 1 200px; width: auto; }
-  .now-btn { margin-top: 12px; }
-  .card {
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 12px;
-    margin-bottom: 12px;
+
+  /* 基準：1行目 都市・日時、2行目 UTC情報・現在時刻ボタン */
+  .base {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "city dt" "info now";
+    gap: 6px 10px;
+    align-items: center;
   }
-  .card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
-  .card-title { font-weight: 700; }
+  .base select { grid-area: city; width: 100%; }
+  .base .datetime { grid-area: dt; }
+  .base .info { grid-area: info; }
+  .now-btn { grid-area: now; justify-self: end; min-height: 30px; padding: 2px 10px; font-size: .85rem; }
+
+  /* 知りたい都市：1行目 都市名・日時・削除、2行目 時差情報 */
+  .card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "title dt rm" "info info info";
+    gap: 2px 8px;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .card-title { grid-area: title; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .card-title small { font-weight: 400; color: var(--muted); }
+  .card .datetime { grid-area: dt; }
+  .card .info { grid-area: info; }
   .remove {
-    min-height: 32px; padding: 2px 10px; color: var(--danger);
+    grid-area: rm; min-height: 32px; padding: 2px 8px; color: var(--danger);
     border-color: transparent; background: transparent; font-size: 1.1rem; line-height: 1;
   }
   .remove:hover { border-color: var(--border); }
-  .empty, .limit { color: var(--muted); font-size: .9rem; margin: 0 0 12px; }
-  .limit { margin: 8px 0 0; }
+  .row { display: flex; gap: 8px; margin-top: 8px; }
+  .row select { flex: 1 1 auto; }
+  .row button { white-space: nowrap; }
+  .empty, .limit { color: var(--muted); font-size: .85rem; margin: 0; }
+  .limit { margin-top: 6px; }
   .count { font-weight: 400; }
+
+  /* スマホ幅：日時を都市名の下に回す */
+  @media (max-width: 560px) {
+    .base { grid-template-areas: "city city" "dt dt" "info now"; }
+    .card { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title rm" "dt dt" "info info"; }
+  }
 </style>
 </head>
 <body>
@@ -104,21 +126,17 @@
 
   <section aria-labelledby="base-h">
     <h2 id="base-h">基準</h2>
-    <div class="field">
-      <label for="base-city">都市</label>
-      <select id="base-city"></select>
-    </div>
-    <div class="field">
-      <label for="base-date">日付・時刻</label>
+    <div class="base">
+      <select id="base-city" aria-label="基準の都市"></select>
       <div class="datetime">
         <input type="date" id="base-date" aria-label="基準の日付">
         <input type="time" id="base-time" step="60" aria-label="基準の時刻">
         <span class="weekday" id="base-weekday"></span>
       </div>
       <div class="info" id="base-info"></div>
+      <button type="button" id="now-btn" class="now-btn">現在時刻にする</button>
       <div class="note" id="base-note"></div>
     </div>
-    <button type="button" id="now-btn" class="now-btn">現在時刻にする</button>
   </section>
 
   <section aria-labelledby="targets-h">
@@ -135,15 +153,13 @@
 
 <template id="card-tpl">
   <div class="card">
-    <div class="card-head">
-      <div class="card-title"></div>
-      <button type="button" class="remove" aria-label="削除" title="削除">×</button>
-    </div>
+    <div class="card-title"></div>
     <div class="datetime">
       <input type="date" class="t-date">
       <input type="time" class="t-time" step="60">
       <span class="weekday"></span>
     </div>
+    <button type="button" class="remove" aria-label="削除" title="削除">×</button>
     <div class="info"></div>
     <div class="note"></div>
   </div>
